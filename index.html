@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-950 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Brain Visualizer - Rational vs. Survival Brain</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            orange: '#FF7028',
+                            orangeGlow: '#FF9E66',
+                            dark: '#06090E',
+                            card: '#0F1623',
+                            border: 'rgba(255, 255, 255, 0.12)'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace']
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts & FontAwesome -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Three.js Fallback/WebGL Engine -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+            overflow: hidden;
+            background-color: #06090e;
+        }
+
+        .glass-panel {
+            background: rgba(15, 22, 35, 0.82);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+        }
+
+        .glass-panel-accent {
+            background: rgba(255, 112, 40, 0.15);
+            backdrop-filter: blur(14px);
+            border: 1px solid rgba(255, 112, 40, 0.5);
+            box-shadow: 0 0 30px rgba(255, 112, 40, 0.25);
+        }
+
+        .callout-box {
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .callout-line-pfc {
+            position: absolute;
+            width: 140px;
+            height: 2px;
+            background: linear-gradient(90deg, #FF7028, rgba(255, 112, 40, 0.2));
+            box-shadow: 0 0 10px rgba(255, 112, 40, 0.8);
+            transform-origin: left center;
+        }
+
+        .callout-line-amy {
+            position: absolute;
+            width: 140px;
+            height: 2px;
+            background: linear-gradient(90deg, #FF7028, rgba(255, 112, 40, 0.2));
+            box-shadow: 0 0 10px rgba(255, 112, 40, 0.8);
+            transform-origin: left center;
+        }
+
+        .pulse-pin {
+            animation: pulsePin 1.8s infinite ease-in-out;
+        }
+
+        @keyframes pulsePin {
+            0%, 100% { transform: scale(1); opacity: 0.9; }
+            50% { transform: scale(1.4); opacity: 1; box-shadow: 0 0 20px #FF7028; }
+        }
+
+        .timeline-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #FF7028;
+            cursor: pointer;
+            box-shadow: 0 0 12px #FF7028;
+            border: 2px solid #ffffff;
+        }
+
+        video {
+            object-fit: contain;
+            width: 100%;
+            height: 100%;
+        }
+    </style>
+</head>
+<body class="h-full w-full relative flex flex-col justify-between select-none">
+
+    <!-- Video Player / 3D Canvas Dual Engine Container -->
+    <div id="visualizer-container" class="absolute inset-0 z-0 flex items-center justify-center bg-slate-950 overflow-hidden">
+        
+        <!-- HTML5 Video Player (Primary for hosted GitHub video.mp4) -->
+        <video id="brain-video" playsinline loop muted crossorigin="anonymous" class="w-full h-full object-contain">
+            <source src="video.mp4" type="video/mp4">
+            <source src="Camera_rotating_around_brain_model_202608021415.mp4" type="video/mp4">
+        </video>
+
+        <!-- WebGL 3D Canvas (Fallback engine if local video file is missing) -->
+        <div id="canvas-3d-fallback" class="absolute inset-0 hidden"></div>
+
+        <!-- Video Load Fallback / Drop notice -->
+        <div id="video-placeholder-notice" class="hidden absolute top-20 bg-slate-900/90 border border-amber-500/40 px-4 py-2 rounded-xl text-xs text-amber-300 flex items-center gap-2 z-20">
+            <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+            <span>Playing WebGL interactive 3D model. Add <code class="bg-black/40 px-1 py-0.5 rounded text-white font-mono">video.mp4</code> to your GitHub folder for video mode.</span>
+        </div>
+    </div>
+
+    <!-- Interactive Callout Labels Layer -->
+    <div id="callout-overlay" class="absolute inset-0 z-10 pointer-events-none overflow-hidden">
+        
+        <!-- 1. RATIONAL BRAIN (Prefrontal Cortex) Highlight Callout (Active during 00:01 - 00:03.5) -->
+        <div id="pfc-callout" class="callout-box absolute opacity-0 pointer-events-auto transition-all duration-500" style="left: 32%; top: 28%;">
+            <!-- Visual Target Pin -->
+            <div class="relative flex items-center justify-center">
+                <span class="pulse-pin absolute w-5 h-5 rounded-full bg-orange-500/40"></span>
+                <span class="w-3 h-3 rounded-full bg-orange-500 border-2 border-white shadow-lg"></span>
+            </div>
+
+            <!-- Dynamic Connector Badge -->
+            <div id="pfc-badge" class="absolute -top-12 left-6 glass-panel-accent px-4 py-3 rounded-2xl flex items-center gap-3 border border-orange-500/50 shadow-2xl min-w-[280px] sm:min-w-[320px]">
+                <div class="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-500/50 flex items-center justify-center text-orange-400 shrink-0">
+                    <i class="fa-solid fa-brain"></i>
+                </div>
+                <div>
+                    <div class="text-[10px] font-mono tracking-widest text-orange-400 font-bold uppercase flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                        HIGHLIGHTED REGION
+                    </div>
+                    <div class="text-xs sm:text-sm font-extrabold text-white tracking-wide">
+                        RATIONAL BRAIN
+                        <span class="block text-[11px] text-orange-200 font-mono font-medium">(Prefrontal Cortex)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. SURVIVAL BRAIN (Amygdala) Highlight Callout (Active during 00:04 - 00:06.5) -->
+        <div id="amy-callout" class="callout-box absolute opacity-0 pointer-events-auto transition-all duration-500" style="left: 48%; top: 48%;">
+            <!-- Visual Target Pin -->
+            <div class="relative flex items-center justify-center">
+                <span class="pulse-pin absolute w-5 h-5 rounded-full bg-orange-500/40"></span>
+                <span class="w-3 h-3 rounded-full bg-orange-500 border-2 border-white shadow-lg"></span>
+            </div>
+
+            <!-- Dynamic Connector Badge -->
+            <div id="amy-badge" class="absolute -top-12 left-6 glass-panel-accent px-4 py-3 rounded-2xl flex items-center gap-3 border border-orange-500/50 shadow-2xl min-w-[280px] sm:min-w-[320px]">
+                <div class="w-9 h-9 rounded-xl bg-orange-500/20 border border-orange-500/50 flex items-center justify-center text-orange-400 shrink-0">
+                    <i class="fa-solid fa-heart-pulse"></i>
+                </div>
+                <div>
+                    <div class="text-[10px] font-mono tracking-widest text-orange-400 font-bold uppercase flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                        HIGHLIGHTED REGION
+                    </div>
+                    <div class="text-xs sm:text-sm font-extrabold text-white tracking-wide">
+                        SURVIVAL BRAIN
+                        <span class="block text-[11px] text-orange-200 font-mono font-medium">(Amygdala & Limbic System)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Top Header Bar -->
+    <header class="relative z-20 p-4 sm:p-6 flex items-center justify-between pointer-events-none">
+        <div class="glass-panel px-4 py-2.5 rounded-2xl flex items-center gap-3 pointer-events-auto border border-slate-800 shadow-xl">
+            <div class="w-8 h-8 rounded-lg bg-orange-500/20 border border-orange-500/40 flex items-center justify-center text-orange-400">
+                <i class="fa-solid fa-circle-nodes"></i>
+            </div>
+            <div>
+                <h1 class="text-xs sm:text-sm font-extrabold text-white tracking-wider uppercase">DUAL-BRAIN VISUALIZER</h1>
+                <p class="text-[10px] text-slate-400 font-mono">GitHub Hosted • Mindsmith AI Ready</p>
+            </div>
+        </div>
+
+        <!-- Top Actions / Controls -->
+        <div class="flex items-center gap-2 pointer-events-auto">
+            <button onclick="toggleRenderEngine()" id="engine-btn" title="Switch Video / 3D Model Engine" class="glass-panel px-3 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:border-slate-700 transition flex items-center gap-2">
+                <i class="fa-solid fa-film text-orange-400" id="engine-icon"></i>
+                <span id="engine-text" class="hidden sm:inline">Video Mode</span>
+            </button>
+            <button onclick="toggleSound()" id="sound-btn" title="Toggle Sound FX" class="glass-panel w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:border-slate-700 transition">
+                <i class="fa-solid fa-volume-xmark" id="sound-icon"></i>
+            </button>
+            <button onclick="openVideoSourceModal()" title="Change Video URL" class="glass-panel w-10 h-10 rounded-xl flex items-center justify-center text-slate-300 hover:text-white hover:border-slate-700 transition">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+            <button onclick="openEmbedModal()" class="glass-panel px-3.5 py-2 rounded-xl text-xs font-bold text-orange-400 hover:text-white border-orange-500/30 hover:border-orange-500 flex items-center gap-2 transition shadow-lg">
+                <i class="fa-solid fa-code"></i>
+                <span class="hidden sm:inline">Embed in Mindsmith</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Interactive Information Card Overlay (Bottom Left) -->
+    <main class="relative z-20 px-4 sm:px-6 pointer-events-none max-w-xl">
+        <div id="info-card" class="glass-panel p-5 rounded-2xl pointer-events-auto transition-all duration-500 border border-slate-800 shadow-2xl">
+            <div class="flex items-start justify-between gap-4">
+                <div>
+                    <span id="card-tag" class="text-[10px] font-mono tracking-widest px-2.5 py-1 rounded-md bg-slate-900 text-slate-400 border border-slate-800 uppercase font-bold">SYSTEM OVERVIEW</span>
+                    <h2 id="card-title" class="text-lg sm:text-xl font-bold text-white mt-2">Human Brain Dual-System</h2>
+                </div>
+                <div id="status-badge" class="flex items-center gap-2 text-[11px] text-orange-400 font-mono bg-orange-500/10 px-2.5 py-1 rounded-full border border-orange-500/20">
+                    <span class="w-2 h-2 rounded-full bg-orange-400 animate-pulse"></span>
+                    <span id="status-text">PLAYING</span>
+                </div>
+            </div>
+
+            <p id="card-desc" class="text-xs sm:text-sm text-slate-300 mt-3 leading-relaxed">
+                The human brain constantly balances two primary decision-making systems: the slow, analytical <strong class="text-orange-400">Rational Brain</strong> and the rapid, threat-detecting <strong class="text-orange-400">Survival Brain</strong>.
+            </p>
+
+            <div id="card-functions" class="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 uppercase font-mono"><i class="fa-solid fa-lightbulb text-orange-400 mr-1"></i> Prefrontal Function</span>
+                    <span id="func-1" class="text-slate-200 font-medium">Logical Analysis & Planning</span>
+                </div>
+                <div class="p-2.5 rounded-xl bg-slate-900/80 border border-slate-800/80 flex flex-col gap-1">
+                    <span class="text-[10px] text-slate-400 uppercase font-mono"><i class="fa-solid fa-shield-halved text-orange-400 mr-1"></i> Amygdala Function</span>
+                    <span id="func-2" class="text-slate-200 font-medium">Threat Detection & Survival</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Synchronized Video Controls & Timeline Bar -->
+    <footer class="relative z-20 p-4 sm:p-6 pointer-events-none">
+        <div class="glass-panel p-3.5 sm:p-4 rounded-2xl pointer-events-auto max-w-2xl mx-auto flex flex-col gap-3 border border-slate-800 shadow-2xl">
+            
+            <!-- Quick Target Navigation Tabs -->
+            <div class="flex items-center justify-between text-xs gap-2">
+                <button onclick="jumpToTimestamp(0)" id="tab-overview" class="tab-btn flex-1 py-1.5 px-2 rounded-lg bg-orange-500 text-slate-950 font-extrabold transition text-center truncate">
+                    Full Brain Overview
+                </button>
+                <button onclick="jumpToTimestamp(1.8)" id="tab-pfc" class="tab-btn flex-1 py-1.5 px-2 rounded-lg bg-slate-800/60 text-slate-300 hover:text-white transition text-center font-medium truncate">
+                    <i class="fa-solid fa-bolt text-orange-400 mr-1"></i> Rational Brain
+                </button>
+                <button onclick="jumpToTimestamp(4.5)" id="tab-amygdala" class="tab-btn flex-1 py-1.5 px-2 rounded-lg bg-slate-800/60 text-slate-300 hover:text-white transition text-center font-medium truncate">
+                    <i class="fa-solid fa-heart-pulse text-orange-400 mr-1"></i> Survival Brain
+                </button>
+            </div>
+
+            <!-- Timeline Scrubber Bar -->
+            <div class="flex items-center gap-3">
+                <button id="play-toggle-btn" onclick="togglePlayPause()" class="w-10 h-10 rounded-xl bg-orange-500 hover:bg-orange-600 text-slate-950 font-extrabold flex items-center justify-center transition shadow-lg shadow-orange-500/25 shrink-0">
+                    <i class="fa-solid fa-pause" id="play-toggle-icon"></i>
+                </button>
+
+                <span id="current-time-txt" class="font-mono text-xs text-orange-400 font-semibold w-12 text-center shrink-0">00:00</span>
+
+                <div class="relative flex-1 flex items-center">
+                    <input type="range" id="timeline-scrubber" min="0" max="8" step="0.05" value="0" class="timeline-slider w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer focus:outline-none">
+                </div>
+
+                <span id="total-time-txt" class="font-mono text-xs text-slate-400 w-12 text-center shrink-0">00:08</span>
+            </div>
+        </div>
+    </footer>
+
+    <!-- Mindsmith AI Embed Modal -->
+    <div id="embed-modal" class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="glass-panel p-6 rounded-3xl max-w-lg w-full border border-slate-800 flex flex-col gap-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center">
+                        <i class="fa-solid fa-code"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-extrabold text-white">Embed in Mindsmith AI</h3>
+                        <p class="text-xs text-slate-400">GitHub Pages Integration</p>
+                    </div>
+                </div>
+                <button onclick="closeEmbedModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- GitHub Pages URL Input Field -->
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-mono text-orange-400 font-semibold uppercase">1. Enter your GitHub Pages URL:</label>
+                <input type="text" id="github-url-input" value="https://YOUR-USERNAME.github.io/YOUR-REPO/" oninput="updateEmbedSnippet()" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:border-orange-500 focus:outline-none">
+                <span class="text-[11px] text-slate-400">Host your project repository on GitHub Pages to generate a live embed link.</span>
+            </div>
+
+            <!-- Generated Snippet -->
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-mono text-orange-400 font-semibold uppercase">2. Mindsmith AI Embed Code:</label>
+                <div class="relative">
+                    <textarea id="embed-snippet" readonly class="w-full h-24 bg-slate-950 border border-slate-800 rounded-xl p-3 font-mono text-[11px] text-orange-300 resize-none focus:outline-none"></textarea>
+                    <button onclick="copyEmbedCode()" id="copy-btn" class="absolute top-2 right-2 px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-slate-950 font-bold rounded-lg text-xs flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-copy"></i>
+                        <span>Copy Code</span>
+                    </button>
+                </div>
+            </div>
+
+            <div id="copy-toast" class="hidden text-xs text-emerald-400 flex items-center gap-2 font-mono">
+                <i class="fa-solid fa-circle-check"></i> Code copied to clipboard! Paste into your Mindsmith Web Embed block.
+            </div>
+        </div>
+    </div>
+
+    <!-- Video Source Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 opacity-0 pointer-events-none transition-opacity duration-300">
+        <div class="glass-panel p-6 rounded-3xl max-w-md w-full border border-slate-800 flex flex-col gap-4 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl bg-orange-500/20 text-orange-400 flex items-center justify-center">
+                        <i class="fa-solid fa-video"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base font-extrabold text-white">Video Source Settings</h3>
+                        <p class="text-xs text-slate-400">Configure MP4 video URL</p>
+                    </div>
+                </div>
+                <button onclick="closeVideoSourceModal()" class="text-slate-400 hover:text-white transition">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="flex flex-col gap-1.5">
+                <label class="text-xs font-mono text-orange-400 font-semibold uppercase">Video File Path / URL:</label>
+                <input type="text" id="custom-video-url" value="video.mp4" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200 font-mono focus:border-orange-500 focus:outline-none">
+                <span class="text-[11px] text-slate-400">Enter local file name (e.g. <code class="text-orange-300 font-mono">video.mp4</code>) or direct hosted GitHub raw video URL.</span>
+            </div>
+
+            <button onclick="applyCustomVideoUrl()" class="w-full py-2.5 bg-orange-500 hover:bg-orange-600 text-slate-950 font-bold rounded-xl text-xs transition">
+                Apply & Reload Video
+            </button>
+        </div>
+    </div>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // APP STATE MANAGEMENT
+        const STATE = {
+            currentTime: 0,
+            duration: 8,
+            isPlaying: true,
+            activeRegion: 'none', // 'none' | 'pfc' | 'amygdala'
+            engine: 'video', // 'video' | '3d'
+            soundEnabled: false,
+            audioCtx: null
+        };
+
+        // REGION ANATOMY DEFINITIONS
+        const REGION_DATA = {
+            none: {
+                tag: 'SYSTEM OVERVIEW',
+                title: 'Human Brain Dual-System',
+                desc: 'The human brain constantly balances two primary decision-making centers: the slow, analytical <strong class="text-orange-400">Rational Brain</strong> and the rapid, threat-detecting <strong class="text-orange-400">Survival Brain</strong>.',
+                f1: 'Logical Analysis & Planning',
+                f2: 'Threat Detection & Survival'
+            },
+            pfc: {
+                tag: 'ANATOMY • PREFRONTAL CORTEX',
+                title: 'RATIONAL BRAIN (Prefrontal Cortex)',
+                desc: 'Responsible for logical thinking, strategic planning, emotional regulation, and decision-making. Consumes high metabolic energy and operates deliberately.',
+                f1: 'Executive Decision Making',
+                f2: 'Impulse Control & Logic'
+            },
+            amygdala: {
+                tag: 'ANATOMY • LIMBIC SYSTEM',
+                title: 'SURVIVAL BRAIN (Amygdala & Limbic)',
+                desc: 'The central alarm system of the human brain. Triggers rapid fight, flight, or freeze responses. Processes emotional memory and survival instincts long before conscious thought.',
+                f1: 'Instant Threat Evaluation',
+                f2: 'Fight-or-Flight Activation'
+            }
+        };
+
+        // DOM ELEMENTS
+        const video = document.getElementById('brain-video');
+        const timeline = document.getElementById('timeline-scrubber');
+        const playBtn = document.getElementById('play-toggle-btn');
+        const playIcon = document.getElementById('play-toggle-icon');
+        const currentTimeTxt = document.getElementById('current-time-txt');
+        const pfcCallout = document.getElementById('pfc-callout');
+        const amyCallout = document.getElementById('amy-callout');
+
+        // INITIALIZATION
+        window.addEventListener('DOMContentLoaded', () => {
+            setupVideoListeners();
+            setupTimelineListeners();
+            init3DFallbackEngine();
+            updateEmbedSnippet();
+
+            // Attempt autoplay video
+            video.play().then(() => {
+                STATE.isPlaying = true;
+                updatePlayStateUI();
+            }).catch(() => {
+                // Autoplay blocked - switch to user interaction start
+                STATE.isPlaying = false;
+                updatePlayStateUI();
+            });
+        });
+
+        // VIDEO SYNCHRONIZATION ENGINE
+        function setupVideoListeners() {
+            video.addEventListener('timeupdate', () => {
+                if (STATE.engine === 'video') {
+                    STATE.currentTime = video.currentTime;
+                    timeline.value = STATE.currentTime;
+                    updateUI(STATE.currentTime);
+                }
+            });
+
+            video.addEventListener('ended', () => {
+                video.currentTime = 0;
+                video.play();
+            });
+
+            // Handle video loading errors gracefully
+            video.addEventListener('error', () => {
+                console.warn("Local video not found. Switching to 3D WebGL render engine.");
+                document.getElementById('video-placeholder-notice').classList.remove('hidden');
+                switchTo3DEngine();
+            });
+        }
+
+        function setupTimelineListeners() {
+            timeline.addEventListener('input', () => {
+                STATE.currentTime = parseFloat(timeline.value);
+                if (STATE.engine === 'video') {
+                    video.currentTime = STATE.currentTime;
+                }
+                updateUI(STATE.currentTime);
+            });
+
+            timeline.addEventListener('mousedown', () => pausePlayback());
+            timeline.addEventListener('touchstart', () => pausePlayback());
+        }
+
+        // MAIN TIMELINE UPDATE & CALLOUT DISPLAY LOGIC
+        function updateUI(t) {
+            // Update time display format (00:00)
+            const secs = Math.floor(t);
+            currentTimeTxt.innerText = `00:${secs.toString().padStart(2, '0')}`;
+
+            let detectedRegion = 'none';
+
+            // VIDEO HIGHLIGHT TIMESTAMPS:
+            // 00:01 - 00:03.5 -> RATIONAL BRAIN (Prefrontal Cortex) Highlight
+            // 00:04 - 00:06.5 -> SURVIVAL BRAIN (Amygdala) Highlight
+            if (t >= 0.9 && t <= 3.6) {
+                detectedRegion = 'pfc';
+            } else if (t >= 3.9 && t <= 6.6) {
+                detectedRegion = 'amygdala';
+            }
+
+            // Show/Hide Floating Badges with dynamic positioning
+            if (detectedRegion === 'pfc') {
+                pfcCallout.style.opacity = '1';
+                pfcCallout.style.transform = 'scale(1)';
+                amyCallout.style.opacity = '0';
+                amyCallout.style.transform = 'scale(0.9)';
+            } else if (detectedRegion === 'amygdala') {
+                amyCallout.style.opacity = '1';
+                amyCallout.style.transform = 'scale(1)';
+                pfcCallout.style.opacity = '0';
+                pfcCallout.style.transform = 'scale(0.9)';
+            } else {
+                pfcCallout.style.opacity = '0';
+                pfcCallout.style.transform = 'scale(0.9)';
+                amyCallout.style.opacity = '0';
+                amyCallout.style.transform = 'scale(0.9)';
+            }
+
+            // Update Info Card content on region change
+            if (STATE.activeRegion !== detectedRegion) {
+                STATE.activeRegion = detectedRegion;
+                renderInfoCard(detectedRegion);
+                playAudioBeep(detectedRegion);
+            }
+
+            // Update Navigation Tab Active States
+            document.getElementById('tab-overview').className = `tab-btn flex-1 py-1.5 px-2 rounded-lg ${detectedRegion === 'none' ? 'bg-orange-500 text-slate-950 font-extrabold' : 'bg-slate-800/60 text-slate-300'} transition text-center truncate`;
+            document.getElementById('tab-pfc').className = `tab-btn flex-1 py-1.5 px-2 rounded-lg ${detectedRegion === 'pfc' ? 'bg-orange-500 text-slate-950 font-extrabold' : 'bg-slate-800/60 text-slate-300'} transition text-center truncate`;
+            document.getElementById('tab-amygdala').className = `tab-btn flex-1 py-1.5 px-2 rounded-lg ${detectedRegion === 'amygdala' ? 'bg-orange-500 text-slate-950 font-extrabold' : 'bg-slate-800/60 text-slate-300'} transition text-center truncate`;
+        }
+
+        function renderInfoCard(region) {
+            const data = REGION_DATA[region];
+            const card = document.getElementById('info-card');
+
+            card.style.transform = 'translateY(6px)';
+            card.style.opacity = '0.7';
+
+            setTimeout(() => {
+                document.getElementById('card-tag').innerText = data.tag;
+                document.getElementById('card-title').innerText = data.title;
+                document.getElementById('card-desc').innerHTML = data.desc;
+                document.getElementById('func-1').innerText = data.f1;
+                document.getElementById('func-2').innerText = data.f2;
+
+                card.style.transform = 'translateY(0px)';
+                card.style.opacity = '1';
+            }, 120);
+        }
+
+        // CONTROLS & NAVIGATION
+        function togglePlayPause() {
+            if (STATE.isPlaying) {
+                pausePlayback();
+            } else {
+                startPlayback();
+            }
+        }
+
+        function startPlayback() {
+            STATE.isPlaying = true;
+            if (STATE.engine === 'video') video.play();
+            updatePlayStateUI();
+        }
+
+        function pausePlayback() {
+            STATE.isPlaying = false;
+            if (STATE.engine === 'video') video.pause();
+            updatePlayStateUI();
+        }
+
+        function updatePlayStateUI() {
+            if (STATE.isPlaying) {
+                playIcon.className = 'fa-solid fa-pause';
+                document.getElementById('status-text').innerText = 'PLAYING';
+            } else {
+                playIcon.className = 'fa-solid fa-play';
+                document.getElementById('status-text').innerText = 'PAUSED';
+            }
+        }
+
+        function jumpToTimestamp(t) {
+            STATE.currentTime = t;
+            timeline.value = t;
+            if (STATE.engine === 'video') {
+                video.currentTime = t;
+            }
+            updateUI(t);
+            startPlayback();
+        }
+
+        // ENGINE TOGGLE (Video vs 3D Procedural Fallback)
+        let scene3D, camera3D, renderer3D, brainGroup3D, pfcMesh3D, amyMesh3D;
+
+        function toggleRenderEngine() {
+            if (STATE.engine === 'video') {
+                switchTo3DEngine();
+            } else {
+                switchToVideoEngine();
+            }
+        }
+
+        function switchTo3DEngine() {
+            STATE.engine = '3d';
+            video.classList.add('hidden');
+            document.getElementById('canvas-3d-fallback').classList.remove('hidden');
+            document.getElementById('engine-icon').className = 'fa-solid fa-cube text-orange-400';
+            document.getElementById('engine-text').innerText = '3D Render Mode';
+            animate3D();
+        }
+
+        function switchToVideoEngine() {
+            STATE.engine = 'video';
+            document.getElementById('canvas-3d-fallback').classList.add('hidden');
+            video.classList.remove('hidden');
+            document.getElementById('engine-icon').className = 'fa-solid fa-film text-orange-400';
+            document.getElementById('engine-text').innerText = 'Video Mode';
+        }
+
+        function init3DFallbackEngine() {
+            const container = document.getElementById('canvas-3d-fallback');
+            scene3D = new THREE.Scene();
+            camera3D = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera3D.position.set(0, 1.2, 7);
+
+            renderer3D = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer3D.setSize(window.innerWidth, window.innerHeight);
+            container.appendChild(renderer3D.domElement);
+
+            const light = new THREE.DirectionalLight(0xffffff, 1.5);
+            light.position.set(5, 5, 5);
+            scene3D.add(light);
+            scene3D.add(new THREE.AmbientLight(0x334155, 1.2));
+
+            brainGroup3D = new THREE.Group();
+            
+            // Base Brain Sphere
+            const geo = new THREE.SphereGeometry(1.5, 32, 32);
+            geo.scale(0.85, 1, 1.25);
+            const mat = new THREE.MeshPhysicalMaterial({ color: 0x94a3b8, transmission: 0.7, opacity: 0.8, transparent: true });
+            const mesh = new THREE.Mesh(geo, mat);
+            brainGroup3D.add(mesh);
+
+            scene3D.add(brainGroup3D);
+        }
+
+        function animate3D() {
+            if (STATE.engine !== '3d') return;
+            requestAnimationFrame(animate3D);
+
+            if (STATE.isPlaying) {
+                STATE.currentTime += 0.016;
+                if (STATE.currentTime >= STATE.duration) STATE.currentTime = 0;
+                timeline.value = STATE.currentTime;
+                updateUI(STATE.currentTime);
+            }
+
+            brainGroup3D.rotation.y = Math.sin(Date.now() * 0.0005) * 0.3 + (STATE.currentTime * 0.2);
+            renderer3D.render(scene3D, camera3D);
+        }
+
+        // AUDIO SOUND SYNTHESIZER
+        function toggleSound() {
+            STATE.soundEnabled = !STATE.soundEnabled;
+            const icon = document.getElementById('sound-icon');
+            icon.className = STATE.soundEnabled ? 'fa-solid fa-volume-high text-orange-400' : 'fa-solid fa-volume-xmark';
+        }
+
+        function playAudioBeep(region) {
+            if (!STATE.soundEnabled || region === 'none') return;
+            try {
+                if (!STATE.audioCtx) STATE.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const ctx = STATE.audioCtx;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(region === 'pfc' ? 580 : 380, ctx.currentTime);
+                gain.gain.setValueAtTime(0.04, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start();
+                osc.stop(ctx.currentTime + 0.25);
+            } catch(e) {}
+        }
+
+        // MINDSMITH AI EMBED MODAL & GITHUB SNIPPET GENERATOR
+        function openEmbedModal() {
+            const modal = document.getElementById('embed-modal');
+            modal.classList.remove('opacity-0', 'pointer-events-none');
+            updateEmbedSnippet();
+        }
+
+        function closeEmbedModal() {
+            const modal = document.getElementById('embed-modal');
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            document.getElementById('copy-toast').classList.add('hidden');
+        }
+
+        function updateEmbedSnippet() {
+            const urlInput = document.getElementById('github-url-input').value.trim();
+            const snippetText = document.getElementById('embed-snippet');
+            snippetText.value = `<iframe src="${urlInput}" width="100%" height="650" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen style="border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 20px 40px rgba(0,0,0,0.5);"></iframe>`;
+        }
+
+        function copyEmbedCode() {
+            const snippetText = document.getElementById('embed-snippet');
+            snippetText.select();
+            document.execCommand('copy');
+
+            const toast = document.getElementById('copy-toast');
+            toast.classList.remove('hidden');
+            setTimeout(() => toast.classList.add('hidden'), 3500);
+        }
+
+        // VIDEO SOURCE CUSTOMIZER
+        function openVideoSourceModal() {
+            document.getElementById('settings-modal').classList.remove('opacity-0', 'pointer-events-none');
+        }
+
+        function closeVideoSourceModal() {
+            document.getElementById('settings-modal').classList.add('opacity-0', 'pointer-events-none');
+        }
+
+        function applyCustomVideoUrl() {
+            const newUrl = document.getElementById('custom-video-url').value.trim();
+            if (newUrl) {
+                video.src = newUrl;
+                video.load();
+                switchToVideoEngine();
+                startPlayback();
+                closeVideoSourceModal();
+            }
+        }
+    </script>
+</body>
+</html>
